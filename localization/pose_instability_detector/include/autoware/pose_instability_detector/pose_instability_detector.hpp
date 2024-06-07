@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef POSE_INSTABILITY_DETECTOR_HPP_
-#define POSE_INSTABILITY_DETECTOR_HPP_
+#ifndef AUTOWARE__POSE_INSTABILITY_DETECTOR__POSE_INSTABILITY_DETECTOR_HPP_
+#define AUTOWARE__POSE_INSTABILITY_DETECTOR__POSE_INSTABILITY_DETECTOR_HPP_
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -22,6 +22,8 @@
 #include <geometry_msgs/msg/twist_with_covariance_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 
+#include <deque>
+#include <tuple>
 #include <vector>
 
 class PoseInstabilityDetector : public rclcpp::Node
@@ -37,12 +39,30 @@ class PoseInstabilityDetector : public rclcpp::Node
   using DiagnosticArray = diagnostic_msgs::msg::DiagnosticArray;
 
 public:
+  struct ThresholdValues
+  {
+    double position_x;
+    double position_y;
+    double position_z;
+    double angle_x;
+    double angle_y;
+    double angle_z;
+  };
+
   explicit PoseInstabilityDetector(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
+  ThresholdValues calculate_threshold(double interval_sec);
+  void dead_reckon(
+    PoseStamped::SharedPtr & initial_pose, const rclcpp::Time & end_time,
+    const std::deque<TwistWithCovarianceStamped> & twist_deque, Pose::SharedPtr & estimated_pose);
 
 private:
   void callback_odometry(Odometry::ConstSharedPtr odometry_msg_ptr);
   void callback_twist(TwistWithCovarianceStamped::ConstSharedPtr twist_msg_ptr);
   void callback_timer();
+
+  std::deque<TwistWithCovarianceStamped> clip_out_necessary_twist(
+    const std::deque<TwistWithCovarianceStamped> & twist_buffer, const rclcpp::Time & start_time,
+    const rclcpp::Time & end_time);
 
   // subscribers and timer
   rclcpp::Subscription<Odometry>::SharedPtr odometry_sub_;
@@ -54,17 +74,26 @@ private:
   rclcpp::Publisher<DiagnosticArray>::SharedPtr diagnostics_pub_;
 
   // parameters
-  const double threshold_diff_position_x_;
-  const double threshold_diff_position_y_;
-  const double threshold_diff_position_z_;
-  const double threshold_diff_angle_x_;
-  const double threshold_diff_angle_y_;
-  const double threshold_diff_angle_z_;
+  const double timer_period_;  // [sec]
+
+  ThresholdValues threshold_values_;
+
+  const double heading_velocity_maximum_;                 // [m/s]
+  const double heading_velocity_scale_factor_tolerance_;  // [%]
+
+  const double angular_velocity_maximum_;                 // [rad/s]
+  const double angular_velocity_scale_factor_tolerance_;  // [%]
+  const double angular_velocity_bias_tolerance_;          // [rad/s]
+
+  const double pose_estimator_longitudinal_tolerance_;  // [m]
+  const double pose_estimator_lateral_tolerance_;       // [m]
+  const double pose_estimator_vertical_tolerance_;      // [m]
+  const double pose_estimator_angular_tolerance_;       // [rad]
 
   // variables
   std::optional<Odometry> latest_odometry_ = std::nullopt;
   std::optional<Odometry> prev_odometry_ = std::nullopt;
-  std::vector<TwistWithCovarianceStamped> twist_buffer_;
+  std::deque<TwistWithCovarianceStamped> twist_buffer_;
 };
 
-#endif  // POSE_INSTABILITY_DETECTOR_HPP_
+#endif  // AUTOWARE__POSE_INSTABILITY_DETECTOR__POSE_INSTABILITY_DETECTOR_HPP_
