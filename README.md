@@ -10,8 +10,9 @@ This branch only holds the mirror configuration and its tooling. See the mirror 
 | --- | --- |
 | `awf-latest/universe` | `autowarefoundation/autoware_universe:main`, `localization/`, `map/` |
 | `awf-latest/core` | `autowarefoundation/autoware_core:main`, `localization/`, `map/` |
+| `awf-latest/launch` | `autowarefoundation/autoware_launch:main`, `autoware_localization_*` and `autoware_map_*` |
 | `feat/v0.64/e2e` | `tier4/autoware_universe:feat/v0.64/e2e`, the same paths as the universe mirror |
-| `awf-combined-latest` | the universe and core mirrors replayed into one linear history |
+| `awf-combined-latest` | the `awf-latest/*` mirrors replayed into one linear history |
 
 In the combined branch each member is filed under the name of its upstream,
 which keeps the two histories out of one another's directories and makes
@@ -24,8 +25,17 @@ awf-combined-latest/
 ├── universe/map/
 ├── core/localization/
 ├── core/map/
+├── launch/
 └── .github/  docs/  LICENSE  NOTICE  README.md  ...
 ```
+
+`awf-latest/launch` is configured ahead of the upstream restructure that
+creates its paths ([autoware_launch#1971](https://github.com/autowarefoundation/autoware_launch/pull/1971)
+migrates `tier4_localization_launch` to `autoware_localization_launch` plus a
+separate config package, and map is to follow). Until those directories exist
+the filter matches nothing, and the source is marked `optional` so that is a
+skip rather than a failure. The mirror starts on its own once the upstream
+change lands.
 
 The upstream mirrors live under the `awf-latest/` namespace. Note that git cannot
 hold a branch named `awf-latest` at the same time as `awf-latest/*`, so the old

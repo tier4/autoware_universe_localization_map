@@ -48,6 +48,10 @@ class Source:
     message_rules: list[MessageRule] = field(default_factory=list)
     mirror_branch: str | None = None
     force: bool = False
+    # An upstream path that does not exist yet. The mirror is skipped instead of
+    # failing, and a combined target leaves the member out, so the mapping can
+    # be configured ahead of the upstream change that creates the path.
+    optional: bool = False
 
 
 @dataclass
@@ -130,6 +134,7 @@ def _parse_source(name: str, raw: dict[str, Any]) -> Source:
         message_rules=rules,
         mirror_branch=raw.get("mirror_branch"),
         force=bool(raw.get("force", False)),
+        optional=bool(raw.get("optional", False)),
     )
 
 

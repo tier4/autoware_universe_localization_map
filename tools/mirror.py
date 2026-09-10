@@ -124,6 +124,17 @@ def do_mirror(config: sync_config.Config, args: argparse.Namespace) -> int:
     print(f"filtering {source.name}: git filter-repo {' '.join(filter_args)}")
     _run(["git", "filter-repo", *filter_args], cwd=clone)
 
+    if subprocess.run(
+        ["git", "-C", clone, "rev-parse", "--verify", "--quiet", "HEAD"],
+        check=False,
+        capture_output=True,
+    ).returncode:
+        message = f"{source.name}: the configured paths match nothing in {source.ref}"
+        if not source.optional:
+            raise RuntimeError(message)
+        print(f"  {message}; skipping because the source is marked optional")
+        return 0
+
     tip = _capture(["git", "-C", clone, "rev-parse", "HEAD"])
     count = _capture(["git", "-C", clone, "rev-list", "--count", "HEAD"])
     print(f"  {source.name}: {count} commit(s), tip {tip[:12]}")
@@ -173,19 +184,27 @@ def do_combine(config: sync_config.Config, args: argparse.Namespace) -> int:
     if not args.downstream:
         raise RuntimeError("combine needs --downstream to read the mirror branches")
 
-    missing = [
-        config.sources[member.source].mirror_branch
-        for member in config.combined[args.target].members
-        if not _remote_has_branch(
-            args.downstream, config.sources[member.source].mirror_branch or ""
-        )
-    ]
+    target = config.combined[args.target]
+    members, missing = [], []
+    for member in target.members:
+        source = config.sources[member.source]
+        if _remote_has_branch(args.downstream, source.mirror_branch or ""):
+            members.append(member)
+        elif source.optional:
+            # Configured ahead of the upstream change that creates its paths.
+            print(f"  {source.mirror_branch}: not published yet, leaving it out")
+        else:
+            missing.append(source.mirror_branch)
     if missing:
         message = f"{args.target}: member branch(es) not published yet: {', '.join(missing)}"
         if not args.allow_missing_members:
             raise RuntimeError(message)
         print(f"{message}; skipping")
         return 0
+    if len(members) < 2:
+        print(f"{args.target}: fewer than two members are published yet; skipping")
+        return 0
+    target.members = members
 
     work = _fresh_dir(os.path.join(args.work, args.target))
     repo = os.path.join(work, "combined")

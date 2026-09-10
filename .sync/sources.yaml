@@ -55,6 +55,25 @@ sources:
       - pattern: '#(\d+)'
         replacement: autowarefoundation/autoware_core#\1
 
+  autoware_launch:
+    upstream: https://github.com/autowarefoundation/autoware_launch.git
+    ref: main
+    mirror_branch: awf-latest/launch
+    force: true
+    # Configured ahead of the upstream restructure that creates these paths:
+    # autowarefoundation/autoware_launch#1971 migrates tier4_localization_launch
+    # to autoware_localization_launch plus a separate config package, and map is
+    # to follow. Until they exist the filter matches nothing, which 'optional'
+    # turns into a skip rather than a failure, so the mirror starts on its own
+    # once the upstream change lands.
+    optional: true
+    paths:
+      - regex: ^autoware_universe_launch/autoware_localization_[^/]+(/.*)?$
+      - regex: ^autoware_universe_launch/autoware_map_[^/]+(/.*)?$
+    message_rules:
+      - pattern: '#(\d+)'
+        replacement: autowarefoundation/autoware_launch#\1
+
   tier4_universe_e2e:
     upstream: https://github.com/tier4/autoware_universe.git
     ref: feat/v0.64/e2e
@@ -95,3 +114,6 @@ combined:
         rename:
           localization: core/localization
           map: core/map
+      - source: autoware_launch
+        rename:
+          autoware_universe_launch: launch
