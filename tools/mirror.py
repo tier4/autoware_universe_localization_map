@@ -48,20 +48,42 @@ def _fresh_dir(path: str) -> str:
     return path
 
 
-def _push(repo: str, downstream: str, local_ref: str, branch: str, force: bool) -> None:
-    args = ["git", "-C", repo, "push"]
-    if force:
-        args.append("--force")
-    args += [downstream, f"{local_ref}:refs/heads/{branch}"]
-    _run(args)
+# Matched against the remote's rejection message to turn a raw git failure into
+# something that names the thing to change.
+_PUSH_HINTS = (
+    (
+        "cannot lock ref",
+        "the branch name collides with an existing ref; git cannot hold both "
+        "refs/heads/X and refs/heads/X/Y, so the other one has to go first",
+    ),
+    (
+        "Changes must be made through a pull request",
+        "a ruleset requires a pull request for this branch and the pushing "
+        "identity is not one of its bypass actors",
+    ),
+    (
+        "Cannot update this protected ref",
+        "a ruleset protects this branch and the pushing identity is not one of "
+        "its bypass actors",
+    ),
+    (
+        "creations being restricted",
+        "a ruleset forbids creating branches here and the pushing identity is "
+        "not one of its bypass actors",
+    ),
+    (
+        "non-fast-forward",
+        "the published history diverged from this build, so publishing it needs " "a force update",
+    ),
+)
 
 
-def _report_reproducibility(repo: str, downstream: str, branch: str, built: str) -> None:
-    """Say whether the freshly built branch still contains what we published.
+def _published_state(repo: str, downstream: str, branch: str, built: str) -> str:
+    """Classify what publishing `built` to `branch` would do, and say so.
 
     A fast-forward means every previously published commit id came out the same,
-    which is the determinism contract holding in production. Anything else is a
-    rewrite, and worth shouting about even when the push is allowed to force.
+    which is the determinism contract holding in production. A diverged branch
+    is a rewrite, and worth shouting about even when force is allowed.
     """
     ref = f"refs/mirror-published/{branch}"
     probe = subprocess.run(
@@ -81,22 +103,56 @@ def _report_reproducibility(repo: str, downstream: str, branch: str, built: str)
     )
     if probe.returncode != 0:
         print(f"  {branch}: not published yet, nothing to compare against")
-        return
+        return "absent"
     published = _capture(["git", "-C", repo, "rev-parse", ref])
     if published == built:
         print(f"  {branch}: unchanged ({built[:12]})")
-        return
+        return "unchanged"
     ancestor = subprocess.run(
         ["git", "-C", repo, "merge-base", "--is-ancestor", published, built],
         check=False,
     )
     if ancestor.returncode == 0:
         print(f"  {branch}: fast-forward from {published[:12]} to {built[:12]}")
-    else:
-        print(
-            f"  {branch}: WARNING history rewritten, {published[:12]} is not an "
-            f"ancestor of {built[:12]}; previously published commit ids changed"
+        return "fast-forward"
+    print(
+        f"  {branch}: WARNING history rewritten, {published[:12]} is not an "
+        f"ancestor of {built[:12]}; previously published commit ids changed"
+    )
+    return "diverged"
+
+
+def _publish(
+    repo: str, downstream: str, local_ref: str, branch: str, built: str, allow_force: bool
+) -> None:
+    """Push `built`, forcing only when the update genuinely needs it."""
+    state = _published_state(repo, downstream, branch, built)
+    if state == "unchanged":
+        print(f"  {branch}: already published, nothing to push")
+        return
+    if state == "diverged" and not allow_force:
+        raise RuntimeError(
+            f"{branch}: publishing would rewrite published history, and the "
+            "configuration does not allow forcing this branch"
         )
+
+    args = ["git", "-C", repo, "push"]
+    if state == "diverged":
+        # Only here. Forcing a fast-forward is pointless and trips rulesets that
+        # would have allowed the same update without the flag.
+        args.append("--force")
+    args += [downstream, f"{local_ref}:refs/heads/{branch}"]
+
+    result = subprocess.run(args, check=False, capture_output=True, text=True)
+    if result.stderr:
+        print(result.stderr.rstrip())
+    if result.returncode == 0:
+        print(f"  pushed {branch}")
+        return
+    for needle, hint in _PUSH_HINTS:
+        if needle in result.stderr:
+            raise RuntimeError(f"{branch}: push rejected -- {hint}")
+    raise RuntimeError(f"{branch}: push failed ({result.returncode})")
 
 
 def do_mirror(config: sync_config.Config, args: argparse.Namespace) -> int:
@@ -142,14 +198,13 @@ def do_mirror(config: sync_config.Config, args: argparse.Namespace) -> int:
     if not source.mirror_branch:
         print(f"  {source.name}: no mirror_branch configured, not pushing")
         return 0
-    if args.downstream:
-        _report_reproducibility(clone, args.downstream, source.mirror_branch, tip)
     if args.push:
         if not args.downstream:
             raise RuntimeError("--push needs --downstream")
-        _push(clone, args.downstream, "HEAD", source.mirror_branch, source.force)
-        print(f"  pushed {source.mirror_branch}")
+        _publish(clone, args.downstream, "HEAD", source.mirror_branch, tip, source.force)
     else:
+        if args.downstream:
+            _published_state(clone, args.downstream, source.mirror_branch, tip)
         print("  dry run, nothing pushed")
     return 0
 
@@ -222,18 +277,12 @@ def do_combine(config: sync_config.Config, args: argparse.Namespace) -> int:
             )
         print(f"  {args.target}: reproducible, both builds are {built[:12]}")
 
-    _report_reproducibility(repo, args.downstream, args.target, built)
-
     if args.push:
-        _push(
-            repo,
-            args.downstream,
-            f"refs/heads/{args.target}",
-            args.target,
-            config.combined[args.target].force,
+        _publish(
+            repo, args.downstream, f"refs/heads/{args.target}", args.target, built, target.force
         )
-        print(f"  pushed {args.target}")
     else:
+        _published_state(repo, args.downstream, args.target, built)
         print("  dry run, nothing pushed")
     return 0
 

@@ -29,7 +29,7 @@ sources:
   autoware_universe:
     upstream: https://github.com/autowarefoundation/autoware_universe.git
     ref: main
-    mirror_branch: awf-latest/universe
+    mirror_branch: awf-latest
     # Kept non-forced on purpose: a failed push is the alarm that tells us the
     # filtered history stopped being reproducible.
     force: false
@@ -46,7 +46,7 @@ sources:
   autoware_core:
     upstream: https://github.com/autowarefoundation/autoware_core.git
     ref: main
-    mirror_branch: awf-latest/core
+    mirror_branch: awf-core-latest
     force: true
     paths:
       - path: localization/
@@ -58,7 +58,7 @@ sources:
   autoware_launch:
     upstream: https://github.com/autowarefoundation/autoware_launch.git
     ref: main
-    mirror_branch: awf-latest/launch
+    mirror_branch: awf-launch-latest
     force: true
     # Configured ahead of the upstream restructure that creates these paths:
     # autowarefoundation/autoware_launch#1971 migrates tier4_localization_launch
