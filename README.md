@@ -8,17 +8,17 @@ This branch only holds the mirror configuration and its tooling. See the mirror 
 
 | Branch | Contents |
 | --- | --- |
-| `awf-latest/universe` | `autowarefoundation/autoware_universe:main`, `localization/`, `map/` |
-| `awf-latest/core` | `autowarefoundation/autoware_core:main`, `localization/`, `map/` |
-| `awf-latest/launch` | `autowarefoundation/autoware_launch:main`, `autoware_localization_*` and `autoware_map_*` |
+| `awf-latest` | `autowarefoundation/autoware_universe:main`, `localization/`, `map/` |
+| `awf-core-latest` | `autowarefoundation/autoware_core:main`, `localization/`, `map/` |
+| `awf-launch-latest` | `autowarefoundation/autoware_launch:main`, `autoware_localization_*` and `autoware_map_*` |
 | `feat/v0.64/e2e` | `tier4/autoware_universe:feat/v0.64/e2e`, the same paths as the universe mirror |
-| `awf-combined-latest` | the `awf-latest/*` mirrors replayed into one linear history |
+| `awf-combined-latest` | the three mirrors above replayed into one linear history |
 
 In the combined branch each member is filed under the name of its upstream,
 which keeps the histories out of one another's directories and makes provenance
 visible in the path. Everything else at the root comes from `autoware_universe`.
 
-`awf-latest/launch` is configured ahead of the upstream restructure that creates
+`awf-launch-latest` is configured ahead of the upstream restructure that creates
 its paths: [autoware_launch#1971](https://github.com/autowarefoundation/autoware_launch/pull/1971)
 migrates `tier4_localization_launch` to `autoware_localization_launch` plus a
 separate config package, and map is to follow. Until those directories exist the
@@ -36,9 +36,12 @@ awf-combined-latest/
 └── .github/  docs/  LICENSE  NOTICE  README.md  ...
 ```
 
-The upstream mirrors live under the `awf-latest/` namespace. Note that git cannot
-hold a branch named `awf-latest` at the same time as `awf-latest/*`, so the old
-flat branch has to be deleted before these can be created.
+The mirror branches keep the flat names the previous workflows used, so nothing
+that already points at `awf-latest` or `awf-core-latest` has to move. Grouping
+them under an `awf-latest/` namespace would read better but would require
+deleting the existing `awf-latest` branch first, which the organisation rulesets
+do not permit here. Because every branch is a deterministic function of its
+inputs, renaming later costs one configuration change and one rerun.
 
 ### How it works
 
@@ -78,7 +81,7 @@ This is checked rather than assumed:
 - Every push reports whether the previously published tip is still an ancestor
   of the new one. A fast-forward means the contract held; anything else is
   reported as a rewrite.
-- `awf-latest/universe` is pushed without `--force` on purpose, so losing
+- `awf-latest` is pushed without `--force` on purpose, so losing
   reproducibility there fails the job instead of silently republishing.
 
 ### Working on the configuration
