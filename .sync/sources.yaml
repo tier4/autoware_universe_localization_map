@@ -1,0 +1,119 @@
+# Declarative description of every mirror this repository publishes.
+#
+# This file is the single source of truth. tools/mirror.py derives the
+# git-filter-repo invocation, the commit-message rewriting, the per-source
+# mirror branches and the combined branches from it; nothing about the mapping
+# is hard-coded in the workflow.
+#
+# The paths below reproduce what the previous mirror-*.yaml workflows filtered,
+# so this change makes the pipeline configuration-driven without moving any
+# package between repositories.
+#
+# Determinism contract
+# --------------------
+# Both stages below are pure functions of (upstream commit, this file):
+#
+#   1. git-filter-repo rewrites each upstream history. Same input plus same
+#      arguments always yields the same commit ids.
+#   2. tools/combine_history.py replays the filtered histories into one linear
+#      branch. Every replayed commit keeps its original author, committer,
+#      timestamps and message; only its parent is rewritten and its tree is
+#      recomposed. No commit is synthesised, so no wall-clock value ever enters
+#      an object.
+#
+# Rebuilding from scratch therefore reproduces the published branches exactly.
+
+version: 1
+
+sources:
+  autoware_universe:
+    upstream: https://github.com/autowarefoundation/autoware_universe.git
+    ref: main
+    mirror_branch: awf-latest/universe
+    # Kept non-forced on purpose: a failed push is the alarm that tells us the
+    # filtered history stopped being reproducible.
+    force: false
+    paths:
+      - path: localization/
+      - path: map/
+      - path: .github/
+      - path: docs/
+      - regex: ^[^/]*$ # root-level files (LICENSE, NOTICE, ...)
+    message_rules:
+      - pattern: '#(\d+)'
+        replacement: autowarefoundation/autoware_universe#\1
+
+  autoware_core:
+    upstream: https://github.com/autowarefoundation/autoware_core.git
+    ref: main
+    mirror_branch: awf-latest/core
+    force: true
+    paths:
+      - path: localization/
+      - path: map/
+    message_rules:
+      - pattern: '#(\d+)'
+        replacement: autowarefoundation/autoware_core#\1
+
+  autoware_launch:
+    upstream: https://github.com/autowarefoundation/autoware_launch.git
+    ref: main
+    mirror_branch: awf-latest/launch
+    force: true
+    # Configured ahead of the upstream restructure that creates these paths:
+    # autowarefoundation/autoware_launch#1971 migrates tier4_localization_launch
+    # to autoware_localization_launch plus a separate config package, and map is
+    # to follow. Until they exist the filter matches nothing, which 'optional'
+    # turns into a skip rather than a failure, so the mirror starts on its own
+    # once the upstream change lands.
+    optional: true
+    paths:
+      - regex: ^autoware_universe_launch/autoware_localization_[^/]+(/.*)?$
+      - regex: ^autoware_universe_launch/autoware_map_[^/]+(/.*)?$
+    message_rules:
+      - pattern: '#(\d+)'
+        replacement: autowarefoundation/autoware_launch#\1
+
+  tier4_universe_e2e:
+    upstream: https://github.com/tier4/autoware_universe.git
+    ref: feat/v0.64/e2e
+    mirror_branch: feat/v0.64/e2e
+    force: true
+    paths:
+      - path: localization/
+      - path: map/
+      - path: .github/
+      - path: docs/
+      - regex: ^[^/]*$ # root-level files (LICENSE, NOTICE, ...)
+    # Commits authored before the fork point still refer to upstream pull
+    # requests; later ones refer to the TIER IV fork.
+    message_rules:
+      - until: 2026-02-21T00:00:00Z
+        pattern: '#(\d+)'
+        replacement: autowarefoundation/autoware_universe#\1
+      - since: 2026-02-21T00:00:00Z
+        pattern: (?<!autowarefoundation)(?<!autowarefoundation/autoware_universe)#(\d+)
+        replacement: tier4/autoware_universe#\1
+
+combined:
+  awf-combined-latest:
+    # Members are replayed into one linear history ordered by committer date.
+    # Ties break on member order then original commit id, so the ordering is
+    # total and stable.
+    order_by: committer_date
+    force: true
+    # Each member is filed under the name of its upstream, which keeps the two
+    # histories from sharing a directory and makes provenance visible in the
+    # path. Everything else at the root comes from autoware_universe.
+    members:
+      - source: autoware_universe
+        rename:
+          localization: universe/localization
+          map: universe/map
+      - source: autoware_core
+        rename:
+          localization: core/localization
+          map: core/map
+      - source: autoware_launch
+        rename:
+          autoware_universe_launch: launch
